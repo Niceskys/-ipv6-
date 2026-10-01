@@ -131,12 +131,6 @@ Append-Section "Recent helper log" {
     }
 }
 
-Append-Section "Exact /128 IPv6 routes" {
-    Get-NetRoute -AddressFamily IPv6 |
-        Where-Object { $_.DestinationPrefix -like "*/128" } |
-        Select-Object InterfaceIndex,InterfaceAlias,DestinationPrefix,NextHop,RouteMetric,PolicyStore
-}
-
 Append-Line ""
 Append-Line "===== END ====="
 
