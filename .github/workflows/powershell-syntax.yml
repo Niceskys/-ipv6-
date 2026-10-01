@@ -29,7 +29,9 @@ jobs:
 
             if ($errors.Count -gt 0) {
               Write-Host "Syntax errors in $($_.Name)"
-              $errors | ForEach-Object { Write-Host $_.Message }
+              $errors | ForEach-Object {
+                Write-Host ("Line={0} Col={1} Text=[{2}] Message={3}" -f $_.Extent.StartLineNumber,$_.Extent.StartColumnNumber,$_.Extent.Text,$_.Message)
+              }
               $bad = $true
             } else {
               Write-Host "PASS PS5 syntax: $($_.Name)"
