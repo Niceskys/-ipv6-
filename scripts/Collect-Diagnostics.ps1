@@ -50,7 +50,7 @@ Append-Section "OS" {
 
 Append-Section "Physical adapters" {
     Get-NetAdapter -Physical |
-        Select-Object ifIndex,Name,InterfaceDescription,Status,LinkSpeed,MacAddress
+        Select-Object ifIndex,Name,InterfaceDescription,Status,LinkSpeed
 }
 
 Append-Section "IPv6 addresses" {
@@ -139,6 +139,16 @@ Append-Section "Exact /128 IPv6 routes" {
 
 Append-Line ""
 Append-Line "===== END ====="
+
+# Redact common local identifiers from the shareable report.
+try {
+    $report = Get-Content $OutputPath -Raw -Encoding UTF8
+    $report = [regex]::Replace($report, '(?i)[A-Z]:\\Users\\[^\\\r\n]+', 'C:\Users\<redacted>')
+    $report = [regex]::Replace($report, '(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b', '<GUID>')
+    Set-Content -Path $OutputPath -Value $report -Encoding UTF8
+} catch {
+    Write-Host "警告：诊断报告脱敏步骤失败，请在分享前人工检查。" -ForegroundColor Yellow
+}
 
 Write-Host "诊断报告已生成：" -ForegroundColor Green
 Write-Host $OutputPath
