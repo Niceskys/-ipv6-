@@ -1,21 +1,74 @@
 # scripts
 
-这里将放通用化后的安装、检查、卸载和诊断脚本。
+v0.2.0 提供第一版通用化脚本。
 
-## 计划文件
+## 普通用户
+
+最简单的方式：
 
 ~~~text
-Install.ps1
-Check.ps1
-Uninstall.ps1
-Collect-Diagnostics.ps1
-CampusNetworkHelper.ps1
+Run-Install.cmd
+↓
+按提示确认校园网络
+↓
+Run-Check.cmd
 ~~~
 
-## 当前状态
+需要诊断：
 
-暂未提交个人版 AutoFix 作为通用脚本。
+~~~text
+Run-Diagnostics.cmd
+~~~
 
-原因：个人版包含针对单台电脑调试形成的校园 IPv6 特征，尚未完成“自动检测 + 配置文件 + 恢复状态”的通用化审计。
+需要完整撤销本项目修改：
 
-在通用版完成前，请不要从其他聊天记录复制硬编码脚本给同学直接运行。
+~~~text
+Run-Uninstall.cmd
+~~~
+
+## PowerShell 文件
+
+### Install.ps1
+
+- 必须管理员权限。
+- 检测校园 IPv6 强特征。
+- 检测到旧版 `CampusIPv6AutoFix` 时拒绝安装。
+- 不写死 ifIndex 或 DHCPv6 地址。
+- 生成 `C:\ProgramData\CampusIPv6Lab\config.json`。
+- 注册 SYSTEM 计划任务 `CampusIPv6LabHelper`。
+
+### CampusNetworkHelper.ps1
+
+长期运行，默认每 5 秒检查一次。
+
+仅在校园强特征成立时：
+
+- 调整已验证的 IPv6 源地址策略；
+- 根据 CrushCloud 实际节点连接添加 /128 物理绕行；
+- 在热点存在时管理热点 MTU。
+
+离开校园环境后恢复本项目自己做过的修改。
+
+### Check.ps1
+
+只读检查，不应修改网络。
+
+### Collect-Diagnostics.ps1
+
+生成 `diagnostics-时间.txt`。
+
+不会读取：
+
+- 订阅 URL；
+- password；
+- Token；
+- Cookie；
+- 浏览器数据。
+
+### Uninstall.ps1
+
+先停止任务，再调用 Helper 的 `RestoreAndExit` 恢复状态文件记录的修改。恢复失败时拒绝删除状态目录，防止丢失回退信息。
+
+## 测试状态
+
+当前仍是测试版。第一次在新电脑上部署时，务必运行 Check，并保存输出。
