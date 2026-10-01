@@ -574,14 +574,22 @@ function Restore-ManagedAddresses {
     Save-State -State $State
 }
 
+function Test-HasManagedChanges {
+    param($State)
+
+    return (
+        [bool]$State.Hotspot.Managed -or
+        @($State.ManagedRoutes).Count -gt 0 -or
+        @($State.ManagedAddresses).Count -gt 0
+    )
+}
+
 function Restore-AllManagedChanges {
     param($State)
 
     Restore-HotspotMtu -State $State
     Restore-ManagedRoutes -State $State
     Restore-ManagedAddresses -State $State
-    $State.NonCampusMisses = 0
-    Save-State -State $State
 }
 
 try {
@@ -617,8 +625,26 @@ try {
                     Save-State -State $state
                 }
 
-                $state.LastCampusSeen = (Get-Date).ToString("o")
-                Save-State -State $state
+                $now = Get-Date
+                $saveLastSeen = $false
+
+                if ($null -eq $state.LastCampusSeen -or [string]::IsNullOrWhiteSpace([string]$state.LastCampusSeen)) {
+                    $saveLastSeen = $true
+                } else {
+                    try {
+                        $previousSeen = [datetime]::Parse([string]$state.LastCampusSeen)
+                        if (($now - $previousSeen).TotalSeconds -ge 60) {
+                            $saveLastSeen = $true
+                        }
+                    } catch {
+                        $saveLastSeen = $true
+                    }
+                }
+
+                if ($saveLastSeen) {
+                    $state.LastCampusSeen = $now.ToString("o")
+                    Save-State -State $state
+                }
 
                 Ensure-SourceAddressPolicy -Context $context -State $state
 
@@ -631,10 +657,15 @@ try {
                     Restore-ManagedRoutes -State $state
                 }
             } else {
-                $state.NonCampusMisses = [int]$state.NonCampusMisses + 1
-                Save-State -State $state
+                if ([int]$state.NonCampusMisses -lt [int]$config.NonCampusMissThreshold) {
+                    $state.NonCampusMisses = [int]$state.NonCampusMisses + 1
+                    Save-State -State $state
+                }
 
-                if ([int]$state.NonCampusMisses -ge [int]$config.NonCampusMissThreshold) {
+                if (
+                    [int]$state.NonCampusMisses -ge [int]$config.NonCampusMissThreshold -and
+                    (Test-HasManagedChanges -State $state)
+                ) {
                     Restore-AllManagedChanges -State $state
                 }
             }
