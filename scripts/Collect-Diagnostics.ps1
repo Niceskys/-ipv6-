@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$OutputPath = ""
 )
@@ -143,4 +143,4 @@ Append-Line "===== END ====="
 Write-Host "诊断报告已生成：" -ForegroundColor Green
 Write-Host $OutputPath
 Write-Host ""
-Write-Host "发送给 AI/同学前仍建议快速检查一次内容；本脚本不会读取订阅、密码、Token 或浏览器数据。"
+Write-Host "发送给 AI 或维护者前仍建议快速检查一次内容；本脚本不会读取订阅、密码、Token 或浏览器数据。"
