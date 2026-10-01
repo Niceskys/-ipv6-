@@ -77,10 +77,10 @@ function Get-IPv6Prefix64 {
 
     $b = $ip.GetAddressBytes()
 
-    $h0 = (($b[0] -shl 8) -bor $b[1])
-    $h1 = (($b[2] -shl 8) -bor $b[3])
-    $h2 = (($b[4] -shl 8) -bor $b[5])
-    $h3 = (($b[6] -shl 8) -bor $b[7])
+    $h0 = ((([int]$b[0]) -shl 8) -bor ([int]$b[1]))
+    $h1 = ((([int]$b[2]) -shl 8) -bor ([int]$b[3]))
+    $h2 = ((([int]$b[4]) -shl 8) -bor ([int]$b[5]))
+    $h3 = ((([int]$b[6]) -shl 8) -bor ([int]$b[7]))
 
     return ("{0:x}:{1:x}:{2:x}:{3:x}::/64" -f $h0,$h1,$h2,$h3)
 }
