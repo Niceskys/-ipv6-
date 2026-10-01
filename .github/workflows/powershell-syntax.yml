@@ -2,76 +2,72 @@ name: PowerShell Safety Check
 
 on:
   push:
-    paths:
-      - "scripts/**"
-      - ".github/workflows/powershell-syntax.yml"
   pull_request:
-    paths:
-      - "scripts/**"
-      - ".github/workflows/powershell-syntax.yml"
 
 jobs:
-  parse-and-audit:
+  audit:
     runs-on: windows-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Parse PowerShell scripts
-        shell: powershell
+      - name: Parse PowerShell
+        shell: pwsh
         run: |
-          $ErrorActionPreference = "Stop"
-          $failed = $false
+          $ErrorActionPreference = 'Stop'
+          $bad = $false
+          $files = Get-ChildItem -Path scripts -Filter '*.ps1' -File
 
-          Get-ChildItem -Path scripts -Filter *.ps1 -File | ForEach-Object {
+          foreach ($file in $files) {
             $tokens = $null
             $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile(
-              $_.FullName,
+              $file.FullName,
               [ref]$tokens,
               [ref]$errors
             ) | Out-Null
 
             if ($errors.Count -gt 0) {
-              Write-Host "Syntax errors in $($_.Name)" -ForegroundColor Red
+              Write-Host "Syntax errors in $($file.Name)"
               $errors | ForEach-Object { Write-Host $_.Message }
-              $failed = $true
+              $bad = $true
             } else {
-              Write-Host "PASS syntax: $($_.Name)" -ForegroundColor Green
+              Write-Host "PASS syntax: $($file.Name)"
             }
           }
 
-          if ($failed) {
-            throw "PowerShell syntax validation failed."
+          if ($bad) {
+            throw 'PowerShell syntax validation failed.'
           }
 
       - name: Static safety guard
-        shell: powershell
+        shell: pwsh
         run: |
-          $ErrorActionPreference = "Stop"
-          $all = (Get-ChildItem scripts -Filter *.ps1 -File | Get-Content -Raw) -join "
-"
+          $ErrorActionPreference = 'Stop'
+          $parts = Get-ChildItem -Path scripts -Filter '*.ps1' -File | ForEach-Object {
+            Get-Content -Path $_.FullName -Raw
+          }
+          $all = [string]::Join([Environment]::NewLine, $parts)
 
           $checks = @(
-            @{ Name = "Disable IPv6 binding"; Pattern = "Disable-NetAdapterBinding" },
-            @{ Name = "Registry IPv6 disable"; Pattern = "DisabledComponents" },
-            @{ Name = "Delete IPv6 default route"; Pattern = "Remove-NetRoute[^\r\n]*(::/0)" },
-            @{ Name = "Delete IPv4 default route"; Pattern = "Remove-NetRoute[^\r\n]*(0\.0\.0\.0/0)" },
-            @{ Name = "Hard-coded personal DHCPv6"; Pattern = "2001:da8:a012:2bf::1fd" },
-            @{ Name = "Hard-coded reference ifIndex"; Pattern = "(InterfaceIndex|ifIndex)\s*=\s*5\b" }
+            @{ Name = 'Disable IPv6 binding'; Pattern = 'Disable-NetAdapterBinding' },
+            @{ Name = 'Registry IPv6 disable'; Pattern = 'DisabledComponents' },
+            @{ Name = 'Delete IPv6 default route'; Pattern = 'Remove-NetRoute[^\r\n]*(::/0)' },
+            @{ Name = 'Delete IPv4 default route'; Pattern = 'Remove-NetRoute[^\r\n]*(0\.0\.0\.0/0)' },
+            @{ Name = 'Hard-coded personal DHCPv6'; Pattern = '2001:da8:a012:2bf::1fd' },
+            @{ Name = 'Hard-coded reference ifIndex'; Pattern = '(InterfaceIndex|ifIndex)\s*=\s*5\b' }
           )
 
           $bad = $false
           foreach ($check in $checks) {
             if ($all -match $check.Pattern) {
-              Write-Host "BLOCKED: $($check.Name)" -ForegroundColor Red
+              Write-Host "BLOCKED: $($check.Name)"
               $bad = $true
             }
           }
 
           if ($bad) {
-            throw "Static safety guard failed."
+            throw 'Static safety guard failed.'
           }
 
-          Write-Host "PASS static safety guard." -ForegroundColor Green
+          Write-Host 'PASS static safety guard.'
