@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$ConfigPath = "$env:ProgramData\CampusIPv6Lab\config.json",
     [string]$StatePath  = "$env:ProgramData\CampusIPv6Lab\state.json",
