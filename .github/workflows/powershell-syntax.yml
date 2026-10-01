@@ -7,51 +7,145 @@ on:
 jobs:
   audit:
     runs-on: windows-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Parse PowerShell
-        shell: pwsh
+      - name: Parse with Windows PowerShell 5.1
+        shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           $bad = $false
-          $files = Get-ChildItem -Path scripts -Filter '*.ps1' -File
 
-          foreach ($file in $files) {
+          Get-ChildItem -Path scripts -Filter '*.ps1' -File | ForEach-Object {
             $tokens = $null
             $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile(
-              $file.FullName,
+              $_.FullName,
               [ref]$tokens,
               [ref]$errors
             ) | Out-Null
 
             if ($errors.Count -gt 0) {
-              Write-Host "Syntax errors in $($file.Name)"
+              Write-Host "Syntax errors in $($_.Name)"
               $errors | ForEach-Object { Write-Host $_.Message }
               $bad = $true
             } else {
-              Write-Host "PASS syntax: $($file.Name)"
+              Write-Host "PASS PS5 syntax: $($_.Name)"
             }
           }
 
           if ($bad) {
-            throw 'PowerShell syntax validation failed.'
+            throw 'Windows PowerShell 5.1 syntax validation failed.'
           }
 
-      - name: Static safety guard
+      - name: Parse with PowerShell 7
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $parts = Get-ChildItem -Path scripts -Filter '*.ps1' -File | ForEach-Object {
-            Get-Content -Path $_.FullName -Raw
+          $bad = $false
+
+          Get-ChildItem -Path scripts -Filter '*.ps1' -File | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName,
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+
+            if ($errors.Count -gt 0) {
+              Write-Host "Syntax errors in $($_.Name)"
+              $errors | ForEach-Object { Write-Host $_.Message }
+              $bad = $true
+            } else {
+              Write-Host "PASS PS7 syntax: $($_.Name)"
+            }
           }
+
+          if ($bad) {
+            throw 'PowerShell 7 syntax validation failed.'
+          }
+
+      - name: Test CIDR helpers on Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $tokens = $null
+          $errors = $null
+          $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'scripts/Install.ps1'),
+            [ref]$tokens,
+            [ref]$errors
+          )
+
+          if ($errors.Count -gt 0) {
+            throw 'Install.ps1 cannot be parsed for helper tests.'
+          }
+
+          $functions = $ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+            $node.Name -in @('Test-IPv6InPrefix','Get-IPv6Prefix64')
+          }, $true)
+
+          foreach ($fn in $functions) {
+            Invoke-Expression $fn.Extent.Text
+          }
+
+          if (-not (Get-Command Test-IPv6InPrefix -ErrorAction SilentlyContinue)) {
+            throw 'Test-IPv6InPrefix was not loaded.'
+          }
+
+          if (-not (Get-Command Get-IPv6Prefix64 -ErrorAction SilentlyContinue)) {
+            throw 'Get-IPv6Prefix64 was not loaded.'
+          }
+
+          if (-not (Test-IPv6InPrefix '2001:da8:a012:2bf::1fd' '2001:da8:a012::/48')) {
+            throw 'Expected campus /48 match failed.'
+          }
+
+          if (-not (Test-IPv6InPrefix '2001:da8:a012:2bf::1fd' '2001:da8:a012:2bf::/64')) {
+            throw 'Expected campus /64 match failed.'
+          }
+
+          if (Test-IPv6InPrefix '2001:da8:a012:2c0::1' '2001:da8:a012:2bf::/64') {
+            throw 'Unexpected /64 match.'
+          }
+
+          if (-not (Test-IPv6InPrefix '2406:da18:7f:8100::1' '2406:da18::/32')) {
+            throw 'Expected node /32 match failed.'
+          }
+
+          if (Test-IPv6InPrefix '2406:da19::1' '2406:da18::/32') {
+            throw 'Unexpected node /32 match.'
+          }
+
+          $p = Get-IPv6Prefix64 '2001:da8:a012:2bf::1fd'
+          if ($p -ne '2001:da8:a012:2bf::/64') {
+            throw "Unexpected derived /64: $p"
+          }
+
+          Write-Host 'PASS CIDR helper tests.'
+
+      - name: Static safety guard
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $parts = Get-ChildItem -Path scripts -File |
+            Where-Object { $_.Extension -in @('.ps1','.cmd') } |
+            ForEach-Object { Get-Content -Path $_.FullName -Raw }
+
           $all = [string]::Join([Environment]::NewLine, $parts)
 
           $checks = @(
             @{ Name = 'Disable IPv6 binding'; Pattern = 'Disable-NetAdapterBinding' },
             @{ Name = 'Registry IPv6 disable'; Pattern = 'DisabledComponents' },
+            @{ Name = 'Windows IP reset'; Pattern = 'netsh\s+(interface\s+)?ip\s+reset' },
+            @{ Name = 'Winsock reset'; Pattern = 'netsh\s+winsock\s+reset' },
             @{ Name = 'Delete IPv6 default route'; Pattern = 'Remove-NetRoute[^\r\n]*(::/0)' },
             @{ Name = 'Delete IPv4 default route'; Pattern = 'Remove-NetRoute[^\r\n]*(0\.0\.0\.0/0)' },
             @{ Name = 'Hard-coded personal DHCPv6'; Pattern = '2001:da8:a012:2bf::1fd' },
@@ -59,6 +153,7 @@ jobs:
           )
 
           $bad = $false
+
           foreach ($check in $checks) {
             if ($all -match $check.Pattern) {
               Write-Host "BLOCKED: $($check.Name)"
