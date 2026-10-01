@@ -79,6 +79,25 @@ if (-not ($config.PSObject.Properties.Name -contains "Version") -or [int]$config
     exit 2
 }
 
+$requiredFields = @(
+    "CampusPrefix",
+    "NodeIPv6Prefix",
+    "HotspotIPv4",
+    "HotspotMTU",
+    "IntervalSeconds",
+    "NonCampusMissThreshold"
+)
+
+foreach ($field in $requiredFields) {
+    if (-not ($config.PSObject.Properties.Name -contains $field)) {
+        Mark "FAIL" "配置缺少字段：$field"
+    }
+}
+
+if ($fail -gt 0) {
+    exit 2
+}
+
 Mark "PASS" "已读取配置 Version=$($config.Version)"
 Write-Host "CampusPrefix  : $($config.CampusPrefix)"
 Write-Host "NodeIPv6Prefix: $($config.NodeIPv6Prefix)"
