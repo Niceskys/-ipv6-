@@ -108,6 +108,7 @@ function Get-CandidateCampusRoute {
             Get-NetIPAddress -InterfaceIndex $route.InterfaceIndex -AddressFamily IPv6 -ErrorAction SilentlyContinue |
             Where-Object {
                 $_.AddressState -ne "Invalid" -and
+                [int]$_.PrefixLength -eq 64 -and
                 (Test-IPv6InPrefix -Address ([string]$_.IPAddress) -Prefix $AnchorPrefix)
             }
         )
@@ -257,6 +258,13 @@ try {
     }
 
     $config | ConvertTo-Json -Depth 6 | Set-Content -Path $ConfigPath -Encoding UTF8
+
+    # Harden the SYSTEM task's writable directory. Standard users get read/execute only.
+    $icacls = Join-Path $env:SystemRoot "System32\icacls.exe"
+    & $icacls $InstallDir /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-32-545:(OI)(CI)RX" | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to harden ACL on $InstallDir (icacls exit=$LASTEXITCODE)."
+    }
 
     $powerShellExe = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
     $q = [char]34
