@@ -134,11 +134,13 @@ function Get-PhysicalDefaultRoutes {
         if ($ipIf) { $metric += [int]$ipIf.InterfaceMetric }
 
         $adapter = $physical | Where-Object { [int]$_.ifIndex -eq [int]$route.InterfaceIndex } | Select-Object -First 1
+        $adapterGuid = ""
+        if ($adapter) { $adapterGuid = [string]$adapter.InterfaceGuid }
 
         $result += [pscustomobject]@{
             InterfaceIndex = [int]$route.InterfaceIndex
             InterfaceAlias = $route.InterfaceAlias
-            InterfaceGuid = if ($adapter) { [string]$adapter.InterfaceGuid } else { "" }
+            InterfaceGuid = $adapterGuid
             NextHop = [string]$route.NextHop
             Metric = $metric
         }
@@ -346,11 +348,21 @@ function Get-HotspotInterface {
 
     if (-not $ipIf) { return $null }
 
+    $adapterGuid = ""
+    if ($adapter) { $adapterGuid = [string]$adapter.InterfaceGuid }
+
+    $mtu = 0
+    if ($ipIf.PSObject.Properties.Name -contains "NlMtu") {
+        $mtu = [int]$ipIf.NlMtu
+    } elseif ($ipIf.PSObject.Properties.Name -contains "NlMtuBytes") {
+        $mtu = [int]$ipIf.NlMtuBytes
+    }
+
     return [pscustomobject]@{
         InterfaceIndex = [int]$ip.InterfaceIndex
         InterfaceAlias = [string]$ip.InterfaceAlias
-        InterfaceGuid = if ($adapter) { [string]$adapter.InterfaceGuid } else { "" }
-        Mtu = [int]$ipIf.NlMtu
+        InterfaceGuid = $adapterGuid
+        Mtu = $mtu
     }
 }
 
