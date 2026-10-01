@@ -27,6 +27,39 @@ function Mark {
     }
 }
 
+function Test-IPv6InPrefix {
+    param([string]$Address,[string]$Prefix)
+    try {
+        $parts = $Prefix.Split("/")
+        if ($parts.Count -ne 2) { return $false }
+        $prefixLength = [int]$parts[1]
+        if ($prefixLength -lt 0 -or $prefixLength -gt 128) { return $false }
+
+        $addrIp = [System.Net.IPAddress]::Parse($Address)
+        $netIp = [System.Net.IPAddress]::Parse($parts[0])
+        if ($addrIp.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetworkV6) { return $false }
+        if ($netIp.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetworkV6) { return $false }
+
+        $a = $addrIp.GetAddressBytes()
+        $n = $netIp.GetAddressBytes()
+        $fullBytes = [math]::Floor($prefixLength / 8)
+        $remainingBits = $prefixLength % 8
+
+        for ($i=0; $i -lt $fullBytes; $i++) {
+            if ($a[$i] -ne $n[$i]) { return $false }
+        }
+
+        if ($remainingBits -gt 0) {
+            $mask = (0xFF -shl (8 - $remainingBits)) -band 0xFF
+            if (($a[$fullBytes] -band $mask) -ne ($n[$fullBytes] -band $mask)) { return $false }
+        }
+
+        return $true
+    } catch {
+        return $false
+    }
+}
+
 Write-Host "===== Campus IPv6 Lab / Check =====" -ForegroundColor Cyan
 
 if (-not (Test-Path $ConfigPath)) {
@@ -34,8 +67,21 @@ if (-not (Test-Path $ConfigPath)) {
     exit 2
 }
 
-$config = Get-Content $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+try {
+    $config = Get-Content $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+} catch {
+    Mark "FAIL" "配置文件无法解析：$($_.Exception.Message)"
+    exit 2
+}
+
+if (-not ($config.PSObject.Properties.Name -contains "Version") -or [int]$config.Version -lt 2) {
+    Mark "FAIL" "配置版本过旧或不完整。"
+    exit 2
+}
+
 Mark "PASS" "已读取配置 Version=$($config.Version)"
+Write-Host "CampusPrefix  : $($config.CampusPrefix)"
+Write-Host "NodeIPv6Prefix: $($config.NodeIPv6Prefix)"
 
 Write-Host ""
 Write-Host "===== Scheduled Task =====" -ForegroundColor Cyan
@@ -70,7 +116,7 @@ foreach ($route in $defaults) {
         Get-NetIPAddress -InterfaceIndex $route.InterfaceIndex -AddressFamily IPv6 |
         Where-Object {
             $_.AddressState -ne "Invalid" -and
-            ([string]$_.IPAddress).ToLowerInvariant().StartsWith(([string]$config.CampusPrefixText).ToLowerInvariant())
+            (Test-IPv6InPrefix -Address ([string]$_.IPAddress) -Prefix ([string]$config.CampusPrefix))
         }
     )
 
@@ -86,7 +132,7 @@ foreach ($route in $defaults) {
 
 if ($campusMatches.Count -gt 0) {
     $ctx = $campusMatches | Select-Object -First 1
-    Mark "PASS" "检测到校园 IPv6 强特征：$($ctx.InterfaceAlias) ifIndex=$($ctx.InterfaceIndex) nextHop=$($ctx.NextHop)"
+    Mark "PASS" "检测到安装时记录的校园 /64：$($ctx.InterfaceAlias) ifIndex=$($ctx.InterfaceIndex) nextHop=$($ctx.NextHop)"
 
     foreach ($addr in @($ctx.Addresses)) {
         Write-Host ("  {0} PrefixOrigin={1} SuffixOrigin={2} State={3} SkipAsSource={4}" -f $addr.IPAddress, $addr.PrefixOrigin, $addr.SuffixOrigin, $addr.AddressState, $addr.SkipAsSource)
@@ -107,7 +153,7 @@ if ($campusMatches.Count -gt 0) {
         Mark "WARN" "IPv6 源地址策略尚未完全达到实验基线；等待 Helper 下一轮或查看日志。"
     }
 } else {
-    Mark "WARN" "当前未检测到配置中的校园 IPv6 强特征。Helper 在这种情况下应 Fail-Closed/恢复自有修改。"
+    Mark "WARN" "当前未检测到安装时记录的校园 /64。Helper 应处于 Fail-Closed/恢复状态。"
 }
 
 Write-Host ""
@@ -149,7 +195,7 @@ if ($cores.Count -gt 0) {
         $nodeConnections += @(
             Get-NetTCPConnection -OwningProcess $core.Id |
             Where-Object {
-                ([string]$_.RemoteAddress).ToLowerInvariant().StartsWith(([string]$config.NodeIPv6PrefixText).ToLowerInvariant())
+                (Test-IPv6InPrefix -Address ([string]$_.RemoteAddress) -Prefix ([string]$config.NodeIPv6Prefix))
             }
         )
     }
@@ -159,7 +205,7 @@ if ($cores.Count -gt 0) {
         $nodeConnections | Sort-Object RemoteAddress,RemotePort -Unique |
             Format-Table State,LocalAddress,LocalPort,RemoteAddress,RemotePort -AutoSize
     } else {
-        Mark "WARN" "当前未捕获到符合 NodeIPv6PrefixText 的核心连接；可能尚未建立连接或节点地址范围已变化。"
+        Mark "WARN" "当前未捕获到符合 NodeIPv6Prefix 的核心连接；可能尚未建立连接或节点地址范围已变化。"
     }
 } else {
     Mark "WARN" "未检测到 CrushCloud Core。若客户端当前未启动，这是正常的。"
@@ -193,14 +239,15 @@ if ($hotspot) {
         }
     }
 } else {
-    Write-Host "192.168.137.1 热点当前未激活。"
+    Write-Host "$($config.HotspotIPv4) 热点当前未激活。"
 }
 
 Write-Host ""
 Write-Host "===== Managed State =====" -ForegroundColor Cyan
 
 if (Test-Path $StatePath) {
-    $state = Get-Content $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+    try {
+        $state = Get-Content $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
     Write-Host "State Version       : $($state.Version)"
     Write-Host "NonCampusMisses     : $($state.NonCampusMisses)"
     Write-Host "ManagedAddresses    : $(@($state.ManagedAddresses).Count)"
@@ -209,6 +256,9 @@ if (Test-Path $StatePath) {
 
     if (@($state.ManagedRoutes).Count -gt 0) {
         $state.ManagedRoutes | Format-Table DestinationPrefix,InterfaceIndex,NextHop -AutoSize
+    }
+    } catch {
+        Mark "FAIL" "状态文件存在但无法解析：$($_.Exception.Message)"
     }
 } else {
     Mark "WARN" "状态文件尚未创建。任务可能刚安装，等待几秒后重试。"
