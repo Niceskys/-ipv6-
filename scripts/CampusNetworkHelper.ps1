@@ -318,6 +318,7 @@ function Get-NodeRemoteAddresses {
         $connections = @(
             Get-NetTCPConnection -OwningProcess $core.ProcessId -ErrorAction SilentlyContinue |
             Where-Object {
+                [string]$_.State -eq "Established" -and
                 -not [string]::IsNullOrWhiteSpace([string]$_.RemoteAddress) -and
                 ([string]$_.RemoteAddress).Contains(":") -and
                 (Test-IPv6InPrefix -Address ([string]$_.RemoteAddress) -Prefix $nodePrefix)
@@ -359,18 +360,33 @@ function Ensure-NodeRoutes {
             continue
         }
 
-        try {
-            New-NetRoute -DestinationPrefix $destination -InterfaceIndex $Context.InterfaceIndex -NextHop $Context.NextHop -AddressFamily IPv6 -RouteMetric 1 -PolicyStore ActiveStore -ErrorAction Stop | Out-Null
+        $tracked = @(
+            $State.ManagedRoutes |
+            Where-Object {
+                [string]$_.DestinationPrefix -eq $destination -and
+                [int]$_.InterfaceIndex -eq [int]$Context.InterfaceIndex -and
+                [string]$_.NextHop -eq [string]$Context.NextHop
+            }
+        ).Count -gt 0
 
+        if (-not $tracked) {
             $State.ManagedRoutes = @($State.ManagedRoutes) + [pscustomobject]@{
                 DestinationPrefix = $destination
                 InterfaceIndex = [int]$Context.InterfaceIndex
                 NextHop = [string]$Context.NextHop
             }
+
+            # Write ownership before changing the route table.
+            # If route creation later fails, rollback can safely see an absent route
+            # and clear this record.
             Save-State -State $State
+        }
+
+        try {
+            New-NetRoute -DestinationPrefix $destination -InterfaceIndex $Context.InterfaceIndex -NextHop $Context.NextHop -AddressFamily IPv6 -RouteMetric 1 -PolicyStore ActiveStore -ErrorAction Stop | Out-Null
             Write-Log "Added node bypass: $destination -> ifIndex=$($Context.InterfaceIndex) nextHop=$($Context.NextHop)"
         } catch {
-            Write-Log "Failed to add node bypass $destination. Error=$($_.Exception.Message)" "ERROR"
+            Write-Log "Failed to add node bypass $destination. Ownership record is retained for safe retry/rollback. Error=$($_.Exception.Message)" "ERROR"
         }
     }
 }
