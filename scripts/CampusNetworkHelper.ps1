@@ -100,8 +100,8 @@ function Load-State {
         $state = Get-Content $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
         return (Normalize-State -State $state)
     } catch {
-        Write-Log "State file unreadable; starting with a new empty state. Error=$($_.Exception.Message)" "WARN"
-        return (New-State)
+        Write-Log "State file exists but is unreadable. Refusing to continue because rollback ownership would be lost. Error=$($_.Exception.Message)" "ERROR"
+        throw "State file is unreadable: $StatePath"
     }
 }
 
@@ -111,6 +111,48 @@ function Save-State {
     $tmp = "$StatePath.tmp"
     $State | ConvertTo-Json -Depth 8 | Set-Content -Path $tmp -Encoding UTF8
     Move-Item -Path $tmp -Destination $StatePath -Force
+}
+
+function Test-IPv6InPrefix {
+    param(
+        [string]$Address,
+        [string]$Prefix
+    )
+
+    try {
+        $parts = $Prefix.Split("/")
+        if ($parts.Count -ne 2) { return $false }
+
+        $prefixLength = [int]$parts[1]
+        if ($prefixLength -lt 0 -or $prefixLength -gt 128) { return $false }
+
+        $addrIp = [System.Net.IPAddress]::Parse($Address)
+        $netIp = [System.Net.IPAddress]::Parse($parts[0])
+
+        if ($addrIp.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetworkV6) { return $false }
+        if ($netIp.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetworkV6) { return $false }
+
+        $addrBytes = $addrIp.GetAddressBytes()
+        $netBytes = $netIp.GetAddressBytes()
+
+        $fullBytes = [math]::Floor($prefixLength / 8)
+        $remainingBits = $prefixLength % 8
+
+        for ($i = 0; $i -lt $fullBytes; $i++) {
+            if ($addrBytes[$i] -ne $netBytes[$i]) { return $false }
+        }
+
+        if ($remainingBits -gt 0) {
+            $mask = (0xFF -shl (8 - $remainingBits)) -band 0xFF
+            if (($addrBytes[$fullBytes] -band $mask) -ne ($netBytes[$fullBytes] -band $mask)) {
+                return $false
+            }
+        }
+
+        return $true
+    } catch {
+        return $false
+    }
 }
 
 function Get-PhysicalDefaultRoutes {
@@ -152,7 +194,7 @@ function Get-PhysicalDefaultRoutes {
 function Get-CampusContext {
     param($Config)
 
-    $prefixText = ([string]$Config.CampusPrefixText).ToLowerInvariant()
+    $campusPrefix = [string]$Config.CampusPrefix
     $routes = @(Get-PhysicalDefaultRoutes)
 
     foreach ($route in $routes) {
@@ -160,7 +202,7 @@ function Get-CampusContext {
             Get-NetIPAddress -InterfaceIndex $route.InterfaceIndex -AddressFamily IPv6 -ErrorAction SilentlyContinue |
             Where-Object {
                 $_.AddressState -ne "Invalid" -and
-                ([string]$_.IPAddress).ToLowerInvariant().StartsWith($prefixText)
+                (Test-IPv6InPrefix -Address ([string]$_.IPAddress) -Prefix $campusPrefix)
             }
         )
 
@@ -269,7 +311,7 @@ function Ensure-SourceAddressPolicy {
 function Get-NodeRemoteAddresses {
     param($Config, $CoreProcesses)
 
-    $prefix = ([string]$Config.NodeIPv6PrefixText).ToLowerInvariant()
+    $nodePrefix = [string]$Config.NodeIPv6Prefix
     $remotes = @()
 
     foreach ($core in $CoreProcesses) {
@@ -278,7 +320,7 @@ function Get-NodeRemoteAddresses {
             Where-Object {
                 -not [string]::IsNullOrWhiteSpace([string]$_.RemoteAddress) -and
                 ([string]$_.RemoteAddress).Contains(":") -and
-                ([string]$_.RemoteAddress).ToLowerInvariant().StartsWith($prefix)
+                (Test-IPv6InPrefix -Address ([string]$_.RemoteAddress) -Prefix $nodePrefix)
             }
         )
 
@@ -374,7 +416,35 @@ function Ensure-HotspotMtu {
 
     $target = [int]$Config.HotspotMTU
 
+    if ([bool]$State.Hotspot.Managed) {
+        $sameAdapter = $false
+
+        if (
+            -not [string]::IsNullOrWhiteSpace([string]$State.Hotspot.InterfaceGuid) -and
+            -not [string]::IsNullOrWhiteSpace([string]$hotspot.InterfaceGuid)
+        ) {
+            $sameAdapter = ([string]$State.Hotspot.InterfaceGuid -eq [string]$hotspot.InterfaceGuid)
+        } else {
+            $sameAdapter = ([int]$State.Hotspot.InterfaceIndex -eq [int]$hotspot.InterfaceIndex)
+        }
+
+        if (-not $sameAdapter) {
+            Write-Log "Hotspot interface changed; restoring the previously managed interface before adopting the new one." "WARN"
+            Restore-HotspotMtu -State $State
+
+            if ([bool]$State.Hotspot.Managed) {
+                Write-Log "Previous hotspot MTU could not be restored; refusing to manage the new hotspot interface." "ERROR"
+                return $false
+            }
+        }
+    }
+
     if (-not [bool]$State.Hotspot.Managed) {
+        if ($hotspot.Mtu -le 0) {
+            Write-Log "Unable to determine original hotspot MTU; refusing to modify it." "ERROR"
+            return $false
+        }
+
         $State.Hotspot.Managed = $true
         $State.Hotspot.InterfaceGuid = $hotspot.InterfaceGuid
         $State.Hotspot.InterfaceAlias = $hotspot.InterfaceAlias
@@ -408,14 +478,22 @@ function Restore-HotspotMtu {
         $adapter = Get-NetAdapter -InterfaceIndex ([int]$State.Hotspot.InterfaceIndex) -ErrorAction SilentlyContinue | Select-Object -First 1
     }
 
-    if ($adapter -and [int]$State.Hotspot.OriginalMtu -gt 0) {
-        try {
-            Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -NlMtuBytes ([int]$State.Hotspot.OriginalMtu) -ErrorAction Stop
-            Write-Log "Restored hotspot MTU: alias=$($adapter.Name) ifIndex=$($adapter.ifIndex) MTU=$($State.Hotspot.OriginalMtu)"
-        } catch {
-            Write-Log "Failed to restore hotspot MTU. Error=$($_.Exception.Message)" "ERROR"
-            return
-        }
+    if (-not $adapter) {
+        Write-Log "Managed hotspot adapter is currently unavailable; keeping rollback state instead of discarding ownership." "WARN"
+        return
+    }
+
+    if ([int]$State.Hotspot.OriginalMtu -le 0) {
+        Write-Log "Managed hotspot has no valid OriginalMtu; keeping rollback state." "ERROR"
+        return
+    }
+
+    try {
+        Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -NlMtuBytes ([int]$State.Hotspot.OriginalMtu) -ErrorAction Stop
+        Write-Log "Restored hotspot MTU: alias=$($adapter.Name) ifIndex=$($adapter.ifIndex) MTU=$($State.Hotspot.OriginalMtu)"
+    } catch {
+        Write-Log "Failed to restore hotspot MTU. Error=$($_.Exception.Message)" "ERROR"
+        return
     }
 
     $State.Hotspot.Managed = $false
@@ -429,16 +507,31 @@ function Restore-HotspotMtu {
 function Restore-ManagedRoutes {
     param($State)
 
+    $remaining = @()
+
     foreach ($route in @($State.ManagedRoutes)) {
         try {
-            Remove-NetRoute -DestinationPrefix ([string]$route.DestinationPrefix) -InterfaceIndex ([int]$route.InterfaceIndex) -NextHop ([string]$route.NextHop) -AddressFamily IPv6 -Confirm:$false -ErrorAction SilentlyContinue
-            Write-Log "Removed managed route: $($route.DestinationPrefix)"
+            $existing = @(
+                Get-NetRoute -AddressFamily IPv6 -DestinationPrefix ([string]$route.DestinationPrefix) -PolicyStore ActiveStore -ErrorAction SilentlyContinue |
+                Where-Object {
+                    [int]$_.InterfaceIndex -eq [int]$route.InterfaceIndex -and
+                    [string]$_.NextHop -eq [string]$route.NextHop
+                }
+            )
+
+            if ($existing.Count -gt 0) {
+                Remove-NetRoute -DestinationPrefix ([string]$route.DestinationPrefix) -InterfaceIndex ([int]$route.InterfaceIndex) -NextHop ([string]$route.NextHop) -AddressFamily IPv6 -Confirm:$false -ErrorAction Stop
+                Write-Log "Removed managed route: $($route.DestinationPrefix)"
+            } else {
+                Write-Log "Managed route already absent: $($route.DestinationPrefix)"
+            }
         } catch {
             Write-Log "Failed to remove managed route $($route.DestinationPrefix). Error=$($_.Exception.Message)" "ERROR"
+            $remaining += $route
         }
     }
 
-    $State.ManagedRoutes = @()
+    $State.ManagedRoutes = @($remaining)
     Save-State -State $State
 }
 
@@ -482,11 +575,21 @@ try {
     if ($RestoreAndExit) {
         Write-Log "RestoreAndExit requested."
         Restore-AllManagedChanges -State $state
+
+        $pendingAddressCount = @($state.ManagedAddresses).Count
+        $pendingRouteCount = @($state.ManagedRoutes).Count
+        $pendingHotspot = [bool]$state.Hotspot.Managed
+
+        if ($pendingAddressCount -gt 0 -or $pendingRouteCount -gt 0 -or $pendingHotspot) {
+            Write-Log "RestoreAndExit incomplete: addresses=$pendingAddressCount routes=$pendingRouteCount hotspot=$pendingHotspot" "ERROR"
+            exit 2
+        }
+
         Write-Log "RestoreAndExit completed."
         exit 0
     }
 
-    Write-Log "CampusNetworkHelper started. interval=$($config.IntervalSeconds)s hotspotMTU=$($config.HotspotMTU) campusPrefix=$($config.CampusPrefixText) nodePrefix=$($config.NodeIPv6PrefixText)"
+    Write-Log "CampusNetworkHelper started. interval=$($config.IntervalSeconds)s hotspotMTU=$($config.HotspotMTU) campusPrefix=$($config.CampusPrefix) nodePrefix=$($config.NodeIPv6Prefix)"
 
     do {
         try {
