@@ -61,20 +61,24 @@ function Get-CandidateCampusRoute {
 
         $adapter = $physical | Where-Object { [int]$_.ifIndex -eq [int]$route.InterfaceIndex } | Select-Object -First 1
         $guid = ""
-        if ($adapter) { $guid = [string]$adapter.InterfaceGuid }
+        $description = ""
+        if ($adapter) {
+            $guid = [string]$adapter.InterfaceGuid
+            $description = [string]$adapter.InterfaceDescription
+        }
 
         $candidates += [pscustomobject]@{
             InterfaceIndex = [int]$route.InterfaceIndex
             InterfaceAlias = [string]$route.InterfaceAlias
             InterfaceGuid = $guid
-            InterfaceDescription = if ($adapter) { [string]$adapter.InterfaceDescription } else { "" }
+            InterfaceDescription = $description
             NextHop = [string]$route.NextHop
             Metric = $metric
             Addresses = $addresses
         }
     }
 
-    return @($candidates | Sort-Object Metric | Select-Object -First 1)
+    return ($candidates | Sort-Object Metric | Select-Object -First 1)
 }
 
 if (-not (Test-Administrator)) {
