@@ -1,0 +1,19 @@
+# 私密或本机生成内容
+*.log
+*.tmp
+*.bak
+*.zip
+diagnostics-*.txt
+state*.json
+config.local.json
+
+# 不提交订阅/凭据文件
+*subscription*
+*secret*
+*token*
+*password*
+credentials*
+
+# Windows
+Thumbs.db
+Desktop.ini
