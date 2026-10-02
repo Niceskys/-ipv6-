@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.2 - 2026-10-02
+
+- 新增 Windows + Android 从零搭建入口。
+- 明确电脑端使用 CrushCloud Windows，手机端使用 NekoBox for Android。
+- 记录已验证 CrushCloud Windows v2.4.2 基线。
+- 固定 NekoBox for Android 1.4.2 参考版本、ARM64 APK 下载地址和 SHA-256。
+- README 和 AI 总控提示词支持从完全未安装客户端的环境开始。
+- 客户端与手机文档统一引用从零搭建页面，避免下载信息分散。
+
 ## 0.2.1 - 2026-10-01
 
 - 完成第一轮通用脚本安全审计。
