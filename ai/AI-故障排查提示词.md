@@ -19,6 +19,8 @@
 - `docs/09-安全与注意事项.md`
 - `ai/AI-禁止事项.md`
 
+如果症状涉及 Windows 热点或手机端，再额外阅读 `docs/06-手机热点与NekoBox.md`。
+
 如果已经安装 Helper，再结合当前的：
 
 - `scripts/Check.ps1`
@@ -51,7 +53,7 @@
 - 修改物理网卡 MTU；
 - 写死别人的 ifIndex、DHCPv6、网关或节点 IP；
 - 随意改 DNS、接口跃点、ICS/NAT、防火墙；
-- 同时启动多个 TUN 客户端；
+- 在同一设备上同时启动多个会接管系统流量的 TUN 客户端；
 - 使用 `-Force` 绕过安装器保护；
 - 删除状态文件或 ProgramData 工作目录来“清空重来”。
 
