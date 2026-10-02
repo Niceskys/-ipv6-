@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.3 - 2026-10-02
+
+- 完成一次“干净 Windows + Android”从零流程缺口审计。
+- 增加软件下载前的来源/平台/版本/digest 核验门。
+- 增加 Windows 11 移动热点从零开启步骤。
+- 增加 mixed-port 7890 与 allow-lan 的手机链路前置检查。
+- 增加 NekoBox 手动 SOCKS5 配置和推荐启动顺序。
+- AI 总控提示词要求实际下载版本偏离基线时先 HOLD，而不是自动追最新版。
+
 ## 0.2.2 - 2026-10-02
 
 - 新增 Windows + Android 从零搭建入口。
