@@ -126,6 +126,7 @@ D. 已安装但需要检查/修复
 
 - `ai/AI-禁止事项.md`
 - `docs/01-环境检查.md`
+- `docs/01A-DNS引导.md`
 - `docs/02-客户端配置.md`
 - `docs/03-IPv6覆写.md`
 - `docs/04-自动修复设计.md`
@@ -153,22 +154,23 @@ D. 已安装但需要检查/修复
 1. **判断是从零搭建还是已有环境**
 2. **如果是从零：按 docs/00-从零搭建.md 先核验当前下载来源、平台、版本和可用 digest，再安装软件**
 3. **只读环境检查**
-4. **CrushCloud 与覆写核对**
-5. **运行 `Run-Diagnostics.cmd` 留档**
-6. **运行 `Run-Install.cmd`**
-7. **等待约 10 秒后运行 `Run-Check.cmd`**
-8. **按 `docs/10` 做 Core 重启测试**
-9. **按 `docs/10` 做离开目标网络恢复测试**
-10. **需要时做 Windows 热点测试**
-11. **需要时按 docs/06 配置 NekoBox Android**
-12. **低负载功能验证**
-13. **首次完整实验最后验证 `Run-Uninstall.cmd` 回退能力**
+4. **如果 Windows 已有校园 IPv6 + 物理 IPv6 默认路由，但域名解析或 CrushCloud 登录页异常：按 docs/01A 执行受控 DNS 引导，再重试登录**
+5. **CrushCloud 与覆写核对**
+6. **运行 `Run-Diagnostics.cmd` 留档**
+7. **运行 `Run-Install.cmd`**
+8. **等待约 10 秒后运行 `Run-Check.cmd`**
+9. **按 `docs/10` 做 Core 重启测试**
+10. **按 `docs/10` 做离开目标网络恢复测试**
+11. **需要时做 Windows 热点测试**
+12. **需要时按 docs/06 配置 NekoBox Android**
+13. **低负载功能验证**
+14. **首次完整实验最后验证 `Run-Uninstall.cmd` 回退能力**
 
 规则：
 
 - 一次只做一个阶段。
 - 额外命令必须标注“只读”或“会修改系统”。
-- 有 FAIL → 停止。
+- 有 FAIL → 停止；但如果 FAIL 的唯一原因是 CrushCloud 登录/域名解析异常，而 Windows 已经存在校园公网 IPv6 + 物理 IPv6 默认路由，先判断是否应进入 docs/01A，而不是直接把整个实验永久 HOLD。
 - WARN → 先解释，再决定是否继续。
 - 安装器自己拒绝 → 尊重拒绝，不绕过。
 - 不使用 `-Force` 作为首次实验路径。
@@ -190,7 +192,8 @@ D. 已安装但需要检查/修复
 - 批量删除/禁用/重建网卡；
 - 修改物理以太网 MTU；
 - 手工写静态 IPv6 替代自动检测；
-- 未验证就改 DNS、网关、接口跃点、ICS/NAT、IP Forwarding、防火墙；
+- 任意/猜测地改 DNS；但 **docs/01A-DNS引导.md 明确规定且满足前置条件的 DNS 引导是允许的**；
+- 未验证就改网关、接口跃点、ICS/NAT、IP Forwarding、防火墙；
 - 在同一设备同时运行多个接管系统流量的 TUN；
 - 修改 `C:\ProgramData\CampusIPv6Lab` 来绕过保护；
 - 恢复失败后直接覆盖重装；
