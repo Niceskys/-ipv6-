@@ -8,6 +8,17 @@
 
 当前基线：NekoBox for Android 1.4.2；现代 ARM64 手机使用 arm64-v8a APK。下载链接和 SHA-256 统一维护在 [00-从零搭建](00-从零搭建.md)。
 
+## 电脑端 7890 前置检查
+
+手机通过热点连接前，先确认 CrushCloud 的 mixed-port 为 7890，并启用了允许局域网连接。
+
+~~~powershell
+Get-NetTCPConnection -LocalPort 7890 -ErrorAction SilentlyContinue |
+  Format-Table LocalAddress,LocalPort,State,OwningProcess -AutoSize
+~~~
+
+如果只看到 `127.0.0.1:7890`，先回到 CrushCloud 检查 allow-lan；不要直接新增防火墙规则。
+
 ## Windows 热点
 
 推荐：
