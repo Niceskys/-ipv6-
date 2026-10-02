@@ -2,6 +2,12 @@
 
 本页为可选模块。只需要电脑端时可以跳过。
 
+## 手机端软件与版本
+
+本项目手机端使用 **NekoBox for Android**，不是 NekoBox Windows 版，也不是 CrushCloud Android 版。
+
+当前基线：NekoBox for Android 1.4.2；现代 ARM64 手机使用 arm64-v8a APK。下载链接和 SHA-256 统一维护在 [00-从零搭建](00-从零搭建.md)。
+
 ## Windows 热点
 
 推荐：
