@@ -38,6 +38,7 @@
 - [从零搭建：Windows + Android](docs/00-从零搭建.md)
 - [项目说明](docs/00-项目说明.md)
 - [安装前环境检查](docs/01-环境检查.md)
+- [DNS 引导：CrushCloud 登录/解析异常](docs/01A-DNS引导.md)
 - [客户端配置](docs/02-客户端配置.md)
 - [IPv6 覆写](docs/03-IPv6覆写.md)
 - [自动修复设计](docs/04-自动修复设计.md)
