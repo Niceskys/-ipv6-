@@ -144,6 +144,58 @@ Resolve-DnsName www.baidu.com
 
 如果仍失败，停止，不继续叠加 DNS、路由、MTU 等修改，转入故障排查。
 
+## 7A. DNS 已正常，但 CrushCloud 仍“加载失败”
+
+如果出现：
+
+~~~text
+系统 DNS 能正常 Resolve-DnsName
++
+指定 2400:3200::1 也能正常解析
++
+Windows 已有校园公网 IPv6 和物理 IPv6 默认路由
++
+CrushCloud 仍提示“无法加载应用配置”
+~~~
+
+此时不要继续反复修改 DNS。
+
+这说明至少“域名解析”这一层已经通过，下一步应定位：
+
+- CrushCloud 实际应用配置接口使用的域名；
+- 该接口解析到 IPv4 还是 IPv6；
+- TCP 443 是否可达；
+- TLS/HTTP 是否成功；
+- 是否是服务端接口临时异常；
+- 是否是客户端自身版本/配置问题。
+
+优先操作：
+
+1. 点击 CrushCloud 的“导出诊断日志”；
+2. 保留失败发生时间；
+3. 不要在日志中公开账号、Token、订阅或节点 password；
+4. 根据日志中的失败域名/IP，再做只读连通性测试。
+
+如果已知某个失败域名，可先使用：
+
+~~~powershell
+Resolve-DnsName <域名>
+Test-NetConnection <解析出的IP> -Port 443
+~~~
+
+如果是网页入口，还可使用：
+
+~~~powershell
+curl.exe -4 -I -L --connect-timeout 5 --max-time 15 https://<域名>/
+curl.exe -6 -I -L --connect-timeout 5 --max-time 15 https://<域名>/
+~~~
+
+注意：
+
+> “电脑有 IPv6”不等于“某个具体应用配置站点一定提供 AAAA/IPv6 服务”。
+
+如果目标域名只有 A 记录，那么该站点仍依赖 IPv4 可达性；这与校园网物理接口已经获得 IPv6 并不矛盾。
+
 ## 8. 回退
 
 如果原来就是“自动获取 DNS / DHCP”，需要恢复时：
