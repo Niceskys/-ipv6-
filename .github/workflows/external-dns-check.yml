@@ -1,0 +1,36 @@
+name: External DNS Check
+
+on:
+  push:
+    paths:
+      - ".github/workflows/external-dns-check.yml"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve from GitHub runner
+        shell: bash
+        run: |
+          set -x
+          echo "=== SYSTEM A apex ==="
+          dig +short A crush91.cc || true
+          echo "=== SYSTEM AAAA apex ==="
+          dig +short AAAA crush91.cc || true
+          echo "=== SYSTEM A www ==="
+          dig +short A www.crush91.cc || true
+          echo "=== SYSTEM AAAA www ==="
+          dig +short AAAA www.crush91.cc || true
+          echo "=== NS ==="
+          dig +short NS crush91.cc || true
+
+          echo "=== CLOUDFLARE A apex ==="
+          dig @1.1.1.1 +short A crush91.cc || true
+          echo "=== GOOGLE A apex ==="
+          dig @8.8.8.8 +short A crush91.cc || true
+
+          echo "=== HTTPS apex ==="
+          curl -4 -vkI --connect-timeout 10 --max-time 20 https://crush91.cc/ || true
+          echo "=== HTTPS www ==="
+          curl -4 -vkI --connect-timeout 10 --max-time 20 https://www.crush91.cc/ || true
